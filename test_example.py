@@ -114,50 +114,7 @@ def test_get_historical_events(page: Page, sport_name, region_name, competition_
                     })
             page.mouse.move(0, 0) 
         
+        break
         page.go_back() 
     print(odds_data)
-
-
     page.pause()
-
-# Chose a faire 
-# - Touver le marché
-# - Trouver le bookmaker dans la liste des bookmakers // fait
-# depuis le nom de ce bookmaker, naviguer jusqu'au tableau des cotes //fait
-# - Extraire les cotes du match //fait 
-# - format json
-
-# format json examples
-# { sport: 'Football',
-#   region: 'England',
-#   competition: 'Premier League',
-#   season: '2024/2025',
-#   market: '1X2 and Fulltime result',
-#   bookmaker: 'Betclic', 
-#   events: [
-#     { home_team: 'Arsenal', away_team: 'Manchester City', 
-#       date_time: 'Sunday,25 May 2025,17:00',
-#       score: '2-1',
-#       odds: [
-#         home_win_odds: [ 
-#           { value: 1.85, date_time: '25 May, 16:59' },
-#           { value: 1.80, date_time: '23 May, 15:10' }],
-#         draw_odds: [ { value: 3.50, date_time: '25 May, 16:59' },
-#                     { value: 3.60, date_time: '23 May, 15:10' }],
-#         away_win_odds: [ { value: 4.20, date_time: '25 May, 16:59' }
-#                       { value: 4.10, date_time: '23 May, 15:10' }],
-#       ] },
-#     { home_team: 'Chelsea', away_team: 'Liverpool', 
-#       date_time: 'Saturday,24 May 2025,15:00',
-#       score: '1-1',
-#       odds: [
-#         home_win_odds: [
-#           { value: 2.10, date_time: '24 May, 14:59' },
-#           { value: 2.00, date_time: '22 May, 13:10' }],
-#         draw_odds: [ { value: 3.20, date_time: '24 May, 14:59' },
-#                     { value: 3.30, date_time: '22 May, 13:10' }],
-#         away_win_odds: [ { value: 3.80, date_time: '24 May, 14:59' }
-#                       { value: 3.70, date_time: '22 May, 13:10' }],
-#       ] },   
-#   ]
-#]}
