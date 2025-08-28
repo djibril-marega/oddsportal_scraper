@@ -1,7 +1,9 @@
 import re
-from playwright.sync_api import Page, expect
+import asyncio
+from playwright.async_api import async_playwright, expect, Page
 import pytest
-from datetime import datetime
+from datetime import datetime 
+from manage_date import add_missing_year
 
 @pytest.fixture
 def sport_name(request):
@@ -23,47 +25,35 @@ def season(request):
 def bookmaker_name(request):
     return request.config.getoption("--bookmaker")
 
-def test_get_historical_events(page: Page, sport_name, region_name, competition_name, season, bookmaker_name):
-    page.goto("https://www.oddsportal.com/standings")
-    # Navigate through the site to reach the desired sport, competition and season
-    page.locator('li[data-testid="sport-tab-list-item"]', has_text=sport_name).first.click()
-    page.get_by_role("link", name=region_name).click()
-    pattern_competition = rf"^{competition_name} \(\d+\)$"
-    page.get_by_role("link", name=re.compile(pattern_competition)).click()
-    page.get_by_role("link", name="Results").first.click()
-    page.get_by_role("link", name=season).click()
+@pytest.mark.asyncio
+async def process_game(context, game_url, bookmaker_name):
+    # Open a new page for each game
+    game_page = await context.new_page()
+    
+    try:
+        print(f"Navigation vers: {game_url}")
+        await game_page.goto(game_url, wait_until='networkidle', timeout=30000)
+        
+        # Await the main elements to load
+        await game_page.wait_for_selector("[data-testid='game-host']", timeout=15000)
+        
+        # Extract game details
+        home_team = await game_page.text_content("[data-testid='game-host']")
+        
+        home_point_element = home_point_element = await game_page.query_selector('[data-testid="game-host"] + div')
+        home_point = await home_point_element.text_content() if home_point_element else "N/A"
+        
+        away_team = await game_page.text_content("[data-testid='game-guest']")
+        
+        away_point_element = await game_page.query_selector('//div[@data-testid="game-guest"]/preceding-sibling::div[1]')
+        away_point = await away_point_element.text_content() if away_point_element else "N/A"
 
-    # Select all game links
-    page.wait_for_selector("a.next-m\\:flex > div[data-testid='game-row']", state='visible')
-    all_page_games = page.locator("a.next-m\\:flex > div[data-testid='game-row']").all()
-    print(f"Nombre total d'éléments trouvés: {len(all_page_games)}")
-    odds_data = {
-        "sport": sport_name,
-        "region": region_name,
-        "competition": competition_name,
-        "season": season,
-        "market": "1X2 and Fulltime result",
-        "bookmaker": bookmaker_name,
-        "events": []
-    }
-
-    # Iterate through each game link and extract details
-    for game in all_page_games:
-        # Click on the game to get detailed information
-        game.click()
-
-        # Extract teams and scores
-        home_team = page.text_content("[data-testid='game-host']")
-        home_point = page.query_selector('[data-testid="game-host"] + div').text_content()
-        away_team = page.text_content("[data-testid='game-guest']")
-        away_point = page.query_selector('//div[@data-testid="game-guest"]/preceding-sibling::div[1]').text_content()
-
-        # Extract date and time of the match
-        game_time = page.text_content("[data-testid='game-time-item']")
+        game_time = await game_page.text_content("[data-testid='game-time-item']")
         game_datetime = datetime.strptime(game_time, "%A,%d %B %Y,%H:%M")
-        odds_data["events"].append({
-            "home_team": home_team,
-            "away_team": away_team,
+        
+        event_data = {
+            "home_team": home_team.strip() if home_team else "N/A",
+            "away_team": away_team.strip() if away_team else "N/A",
             "date_time": game_datetime.strftime("%Y-%m-%d %H:%M"),
             "score": f"{home_point}-{away_point}",
             "odds": {
@@ -71,50 +61,167 @@ def test_get_historical_events(page: Page, sport_name, region_name, competition_
                 "draw_odds": [],
                 "away_win_odds": []
             }
-        })
+        }
 
-        # Find the specified bookmaker in the list
+        # Find the bookmaker section
         pattern_bookmaker = rf"^{bookmaker_name}(?:\.[a-z]+)?$"
-        link_bookmaker = page.locator('a > p', has_text=re.compile(pattern_bookmaker, re.IGNORECASE))
-
-        # Navigate to the bookmaker's odds table
-        bookmaker_block = link_bookmaker.locator("xpath=../../..")
-        bookmaker_block.wait_for(state="visible")
-
-        # Extract odds cells
-        odds_cells = bookmaker_block.locator('[data-testid="odd-container"]')
-
-
-        for i in range(odds_cells.count()):
-            expect(odds_cells.nth(i)).to_be_visible()
-            odds_cells.nth(i).hover()
-            odds_block = page.locator("h3", has_text="Odds movement").locator("..")
-            odds_block.wait_for(state="visible", timeout=5000)
-            
-            # Get the odds movement text
-            odds_text = odds_block.text_content()
-            pattern = r"(\d{1,2} \w{3,}, \d{2}:\d{2})([0-9]+\.[0-9]+)"
-            matches_odds_datetime = re.findall(pattern, odds_text)
-            for date_odds_str, value in matches_odds_datetime:
-                date_odds = datetime.strptime(date_odds_str + " 2025", "%d %B, %H:%M %Y")
-                if i == 0:
-                    odds_data["events"][-1]["odds"]["home_win_odds"].append({
-                        "value": float(value),
-                        "date_time": date_odds.strftime("%Y-%m-%d %H:%M")
-                    })
-                elif i == 1:
-                    odds_data["events"][-1]["odds"]["draw_odds"].append({
-                        "value": float(value),
-                        "date_time": date_odds.strftime("%Y-%m-%d %H:%M")
-                    })
-                elif i == 2:
-                    odds_data["events"][-1]["odds"]["away_win_odds"].append({
-                        "value": float(value),
-                        "date_time": date_odds.strftime("%Y-%m-%d %H:%M")
-                    })
-            page.mouse.move(0, 0) 
+        link_bookmaker = game_page.locator('a > p', has_text=re.compile(pattern_bookmaker, re.IGNORECASE))
         
-        break
-        page.go_back() 
-    print(odds_data)
-    page.pause()
+        if await link_bookmaker.count() > 0:
+            bookmaker_block = link_bookmaker.locator("xpath=../../..")
+            await bookmaker_block.wait_for(state="visible")
+            odds_cells = bookmaker_block.locator('[data-testid="odd-container"]')
+            
+            for i in range(await odds_cells.count()):
+                await expect(odds_cells.nth(i)).to_be_visible()
+                await odds_cells.nth(i).hover()
+                
+                # Extraction of odds and timestamps
+                try:
+                    odds_block = game_page.locator("h3", has_text="Odds movement").locator("..")
+                    await odds_block.wait_for(state="visible", timeout=5000)
+                    
+                    odds_text = await odds_block.text_content()
+                    pattern = r"(\d{1,2} \w{3,}, \d{2}:\d{2})([0-9]+\.[0-9]+)"
+                    matches_odds_datetime = re.findall(pattern, odds_text)
+                    
+                    for date_odds_str, value in matches_odds_datetime:
+                        #game_datetime = datetime.strptime(date_odds_str.strip(), '%d %b, %H:%M %Y')
+                        date_odds = add_missing_year(date_odds_str, game_datetime)
+                        if i == 0:
+                            event_data["odds"]["home_win_odds"].append({
+                                
+                                "value": float(value),
+                                "date_time": date_odds
+                            })
+                        elif i == 1:
+                            event_data["odds"]["draw_odds"].append({
+                                "value": float(value),
+                                "date_time": date_odds
+                            })
+                        elif i == 2:
+                            event_data["odds"]["away_win_odds"].append({
+                                "value": float(value),
+                                "date_time": date_odds
+                            })
+                except Exception as e:
+                    print(f"Erreur lors de l'extraction des cotes: {e}")
+                
+                await game_page.mouse.move(0, 0)
+        
+        await game_page.close()
+        return event_data
+        
+    except Exception as e:
+        print(f"Erreur lors du traitement du match {game_url}: {e}")
+        await game_page.close()
+        return None
+
+@pytest.mark.asyncio()
+async def test_get_historical_events(sport_name, region_name, competition_name, season, bookmaker_name):
+    # Use Playwright to navigate and extract data
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        await page.goto("https://www.oddsportal.com/standings", wait_until='networkidle')
+        
+        # Manage cookie consent if present
+        try:
+            accept_cookies = page.get_by_role("button", name=re.compile("Accept", re.IGNORECASE))
+            if await accept_cookies.is_visible(timeout=5000):
+                await accept_cookies.click()
+                await asyncio.sleep(1)
+        except:
+            pass
+        
+        # Navigate through the site to reach the desired competition and season
+        await page.locator('li[data-testid="sport-tab-list-item"]', has_text=sport_name).first.click()
+        await asyncio.sleep(2)
+        
+        await page.get_by_role("link", name=region_name).click()
+        await asyncio.sleep(2)
+        
+        pattern_competition = rf"^{competition_name} \(\d+\)$"
+        await page.get_by_role("link", name=re.compile(pattern_competition)).click()
+        await asyncio.sleep(2)
+        
+        await page.get_by_role("link", name="Results").first.click()
+        await asyncio.sleep(2)
+        
+        await page.get_by_role("link", name=season).click()
+        await asyncio.sleep(2)
+
+        # Wait for the game list to load
+        await page.wait_for_selector("a.next-m\\:flex > div[data-testid='game-row']", state='visible', timeout=15000)
+        
+        # Extract game URLs
+        game_urls = []
+        game_elements = await page.query_selector_all("a.next-m\\:flex > div[data-testid='game-row']")
+        
+        for element in game_elements:
+            # Try to get the href directly
+            parent_a = await element.evaluate_handle('el => el.parentElement')
+            href = await parent_a.get_attribute('href')
+            
+            if href and not href.startswith('javascript:'):
+                full_url = f"https://www.oddsportal.com{href}"
+                game_urls.append(full_url)
+                print(f"URL du match: {full_url}")
+            else:
+                # Alternative: click and get current URL
+                try:
+                    await parent_a.click()
+                    await asyncio.sleep(1)
+                    current_url = page.url
+                    if current_url and 'match' in current_url:
+                        game_urls.append(current_url)
+                        print(f"URL du match (via click): {current_url}")
+                    await page.go_back()
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"Impossible de récupérer l'URL pour un élément: {e}")
+
+        print(f"Nombre d'URLs de matchs récupérées: {len(game_urls)}")
+        
+        odds_data = {
+            "sport": sport_name,
+            "region": region_name,
+            "competition": competition_name,
+            "season": season,
+            "market": "1X2 and Fulltime result",
+            "bookmaker": bookmaker_name,
+            "events": []
+        }
+
+        if not game_urls:
+            print("Aucune URL de match valide trouvée")
+            # Closing context and browser before returning
+            await context.close()
+            await browser.close()
+            return
+
+        # Limit the number of concurrent pages to avoid overwhelming the browser
+        semaphore = asyncio.Semaphore(3)  # 3 onglets simultanés max
+        
+        async def limited_process_game(url):
+            async with semaphore:
+                return await process_game(context, url, bookmaker_name)
+        
+        # Process all games concurrently with limited concurrency
+        tasks = [limited_process_game(url) for url in game_urls]
+        results = await asyncio.gather(*tasks)
+        
+        # Filter out None results
+        odds_data["events"] = [result for result in results if result is not None]
+        
+        print(odds_data)
+        print(f"Nombre d'événements traités avec succès: {len(odds_data['events'])}")
+        
+        # Close the browser context and browser
+        await context.close()
+        await browser.close()
+
+# bugs to fix:
+# some pages game_page.goto not loading properly (timeout even with wait_until networkidle) - need to retry or refresh 
