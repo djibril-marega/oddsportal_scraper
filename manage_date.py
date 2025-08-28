@@ -1,49 +1,71 @@
 from datetime import datetime
+import re
 
-def add_missing_year(odds_date_input, match_datetime):
+def parse_oddsportal_date_to_datetime(date_str, reference_date=None):
     """
-    Ajoute l'année manquante à une date de cotes en se basant sur la date du match.
-    Prend en compte les changements d'année.
-    
-    Args:
-        odds_date_input (str ou datetime): Date des cotes (string ou objet datetime)
-        match_datetime (datetime): Date complète du match
-    
-    Returns:
-        datetime: Date complète avec l'année appropriée
+    Parse les dates d'OddsPortal en objets datetime
+    Version simplifiée mais tout aussi robuste
     """
-    # Si l'entrée est déjà un objet datetime, le retourner directement
-    if isinstance(odds_date_input, datetime):
-        return odds_date_input
+    if isinstance(date_str, datetime):
+        return date_str
     
-    # Si c'est une string, la traiter
-    elif isinstance(odds_date_input, str):
-        try:
-            # Nettoyer la chaîne
-            odds_date_str = odds_date_input.strip()
-            
-            # Parser la date des cotes sans année
-            odds_date = datetime.strptime(odds_date_str, '%d %b, %H:%M')
-            
-            # Ajouter l'année du match par défaut
-            odds_date = odds_date.replace(year=match_datetime.year)
-            
-            # Calculer la différence en jours entre la date des cotes et la date du match
-            days_difference = (odds_date - match_datetime).days
-            
-            # Si la date des cotes est plus de 30 jours après la date du match,
-            # c'est probablement de l'année précédente
-            if days_difference > 30:
-                odds_date = odds_date.replace(year=match_datetime.year - 1)
-            # Si la date des cotes est plus de 330 jours avant la date du match,
-            # c'est probablement de l'année suivante (cas moins fréquent)
-            elif days_difference < -330:
-                odds_date = odds_date.replace(year=match_datetime.year + 1)
-            
-            return odds_date.strftime("%Y-%m-%d %H:%M")
-        except ValueError as e:
-            print(f"Erreur lors de l'ajout de l'année à '{odds_date_input}': {e}")
-            return None
-    else:
-        print(f"Type d'entrée non géré: {type(odds_date_input)}")
+    if not isinstance(date_str, str):
         return None
+    
+    if reference_date is None:
+        reference_date = datetime.now()
+    
+    date_str = date_str.strip().lower()
+    
+    # Mapping des mois (version simplifiée)
+    month_map = {
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+    }
+    
+    # Pattern unique plus flexible
+    pattern = r'(?:(\w+),)?\s*(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?[,\s]*(\d{1,2}):(\d{2})'
+    
+    match = re.search(pattern, date_str, re.IGNORECASE)
+    if not match:
+        return None
+    
+    # Extraire les composants
+    _, day_str, month_str, year_str, hour_str, minute_str = match.groups()
+    
+    try:
+        # Convertir les composants
+        day = int(day_str)
+        month = month_map.get(month_str.lower()[:3])
+        if not month:
+            return None
+        
+        hour = int(hour_str)
+        minute = int(minute_str)
+        
+        # Gérer l'année
+        if year_str:
+            year = int(year_str)
+        else:
+            year = reference_date.year
+            # Créer une date temporaire pour l'ajustement d'année
+            temp_date = datetime(year, month, day, hour, minute)
+            days_diff = (temp_date - reference_date).days
+            
+            # Ajuster l'année si nécessaire
+            if days_diff > 180:
+                year -= 1
+            elif days_diff < -180:
+                year += 1
+        
+        return datetime(year, month, day, hour, minute)
+    except (ValueError, TypeError):
+        return None
+
+# La fonction add_missing_year reste identique
+def add_missing_year(odds_date_input, match_datetime):
+    dt = parse_oddsportal_date_to_datetime(odds_date_input, match_datetime)
+    if dt is None:
+        print(f"Erreur lors du traitement de la date '{odds_date_input}'")
+        return None
+    return dt.strftime("%Y-%m-%d %H:%M")

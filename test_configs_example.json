@@ -1,0 +1,16 @@
+[
+    {
+        "sport": "Football",
+        "region": "England", 
+        "competition": "Premier League",
+        "season": "2024/2025",
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2024/2025", 
+        "bookmaker": "Betclic"
+    }
+]

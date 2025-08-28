@@ -3,7 +3,8 @@ import asyncio
 from playwright.async_api import async_playwright, expect, Page
 import pytest
 from datetime import datetime 
-from manage_date import add_missing_year
+from manage_date import add_missing_year, parse_oddsportal_date_to_datetime
+from save_data import save_odds_data
 
 @pytest.fixture
 def sport_name(request):
@@ -31,7 +32,7 @@ async def process_game(context, game_url, bookmaker_name):
     game_page = await context.new_page()
     
     try:
-        print(f"Navigation vers: {game_url}")
+        print(f"Navigating to match URL: {game_url}")
         await game_page.goto(game_url, wait_until='networkidle', timeout=30000)
         
         # Await the main elements to load
@@ -49,7 +50,7 @@ async def process_game(context, game_url, bookmaker_name):
         away_point = await away_point_element.text_content() if away_point_element else "N/A"
 
         game_time = await game_page.text_content("[data-testid='game-time-item']")
-        game_datetime = datetime.strptime(game_time, "%A,%d %B %Y,%H:%M")
+        game_datetime = parse_oddsportal_date_to_datetime(game_time)
         
         event_data = {
             "home_team": home_team.strip() if home_team else "N/A",
@@ -86,7 +87,6 @@ async def process_game(context, game_url, bookmaker_name):
                     matches_odds_datetime = re.findall(pattern, odds_text)
                     
                     for date_odds_str, value in matches_odds_datetime:
-                        #game_datetime = datetime.strptime(date_odds_str.strip(), '%d %b, %H:%M %Y')
                         date_odds = add_missing_year(date_odds_str, game_datetime)
                         if i == 0:
                             event_data["odds"]["home_win_odds"].append({
@@ -105,7 +105,7 @@ async def process_game(context, game_url, bookmaker_name):
                                 "date_time": date_odds
                             })
                 except Exception as e:
-                    print(f"Erreur lors de l'extraction des cotes: {e}")
+                    print(f"Failed to extract odds: {e}")
                 
                 await game_page.mouse.move(0, 0)
         
@@ -113,7 +113,7 @@ async def process_game(context, game_url, bookmaker_name):
         return event_data
         
     except Exception as e:
-        print(f"Erreur lors du traitement du match {game_url}: {e}")
+        print(f"Failed to process match {game_url}: {e}")
         await game_page.close()
         return None
 
@@ -140,7 +140,7 @@ async def test_get_historical_events(sport_name, region_name, competition_name, 
         await page.locator('li[data-testid="sport-tab-list-item"]', has_text=sport_name).first.click()
         await asyncio.sleep(2)
         
-        await page.get_by_role("link", name=region_name).click()
+        await page.get_by_role("link", name=region_name).first.click()
         await asyncio.sleep(2)
         
         pattern_competition = rf"^{competition_name} \(\d+\)$"
@@ -153,37 +153,43 @@ async def test_get_historical_events(sport_name, region_name, competition_name, 
         await page.get_by_role("link", name=season).click()
         await asyncio.sleep(2)
 
-        # Wait for the game list to load
-        await page.wait_for_selector("a.next-m\\:flex > div[data-testid='game-row']", state='visible', timeout=15000)
-        
-        # Extract game URLs
         game_urls = []
-        game_elements = await page.query_selector_all("a.next-m\\:flex > div[data-testid='game-row']")
-        
-        for element in game_elements:
-            # Try to get the href directly
-            parent_a = await element.evaluate_handle('el => el.parentElement')
-            href = await parent_a.get_attribute('href')
+        while True:
+            # Wait for the game list to load
+            await page.wait_for_selector("a.next-m\\:flex > div[data-testid='game-row']", state='visible', timeout=15000)
             
-            if href and not href.startswith('javascript:'):
-                full_url = f"https://www.oddsportal.com{href}"
-                game_urls.append(full_url)
-                print(f"URL du match: {full_url}")
-            else:
-                # Alternative: click and get current URL
-                try:
-                    await parent_a.click()
-                    await asyncio.sleep(1)
-                    current_url = page.url
-                    if current_url and 'match' in current_url:
-                        game_urls.append(current_url)
-                        print(f"URL du match (via click): {current_url}")
-                    await page.go_back()
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    print(f"Impossible de récupérer l'URL pour un élément: {e}")
+            # Extract game URLs
+            game_elements = await page.query_selector_all("a.next-m\\:flex > div[data-testid='game-row']")
+            
+            for element in game_elements:
+                # Try to get the href directly
+                parent_a = await element.evaluate_handle('el => el.parentElement')
+                href = await parent_a.get_attribute('href')
+                
+                if href and not href.startswith('javascript:'):
+                    full_url = f"https://www.oddsportal.com{href}"
+                    game_urls.append(full_url)
+                    print(f"Fetched match URL: {full_url}")
+                else:
+                    # Alternative: click and get current URL
+                    try:
+                        await parent_a.click()
+                        await asyncio.sleep(1)
+                        current_url = page.url
+                        if current_url and 'match' in current_url:
+                            game_urls.append(current_url)
+                            print(f"URL du match (via click): {current_url}")
+                        await page.go_back()
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"Failed to retrieve URL for an item: {e}")
 
-        print(f"Nombre d'URLs de matchs récupérées: {len(game_urls)}")
+            print(f"Number of match URLs retrieved: {len(game_urls)}")
+            # Check if there's a next page
+            next_page = page.locator('a.pagination-link', has_text="Next")
+            if not await next_page.is_visible() or not await next_page.is_enabled():
+                break
+            await next_page.click()
         
         odds_data = {
             "sport": sport_name,
@@ -203,8 +209,7 @@ async def test_get_historical_events(sport_name, region_name, competition_name, 
             return
 
         # Limit the number of concurrent pages to avoid overwhelming the browser
-        semaphore = asyncio.Semaphore(3)  # 3 onglets simultanés max
-        
+        semaphore = asyncio.Semaphore(3)  # 3 concurrent pages
         async def limited_process_game(url):
             async with semaphore:
                 return await process_game(context, url, bookmaker_name)
@@ -216,8 +221,9 @@ async def test_get_historical_events(sport_name, region_name, competition_name, 
         # Filter out None results
         odds_data["events"] = [result for result in results if result is not None]
         
-        print(odds_data)
-        print(f"Nombre d'événements traités avec succès: {len(odds_data['events'])}")
+        # Save the extracted data to a JSON file
+        save_odds_data(odds_data)
+        print(f"Number of successfully processed events: {len(odds_data['events'])}")
         
         # Close the browser context and browser
         await context.close()
