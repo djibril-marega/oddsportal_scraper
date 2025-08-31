@@ -5,6 +5,16 @@ import pytest
 from datetime import datetime 
 from manage_date import add_missing_year, parse_oddsportal_date_to_datetime
 from save_data import save_odds_data
+import random, asyncio
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/118.0.5993.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/16.5 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+]
 
 @pytest.fixture
 def sport_name(request):
@@ -26,6 +36,29 @@ def season(request):
 def bookmaker_name(request):
     return request.config.getoption("--bookmaker")
 
+
+async def handle_cookie_consent(page: Page):
+    try:
+        accept_cookies = page.get_by_role("button", name=re.compile("Accept", re.IGNORECASE))
+        if await accept_cookies.is_visible(timeout=5000):
+            await accept_cookies.click()
+            await asyncio.sleep(1)
+    except:
+        pass
+
+async def goto_with_retry(page, url, retries=3, timeout=30000):
+    for attempt in range(1, retries+1):
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=timeout)
+            return True
+        except Exception as e:
+            print(f"Attempt {attempt} failed for {url}: {e}")
+            if attempt < retries:
+                await asyncio.sleep(2 * attempt)  # Exponential backoff
+            else:
+                print(f"Failed to load page after {retries} attempts: {url}")
+                return False
+
 @pytest.mark.asyncio
 async def process_game(context, game_url, bookmaker_name):
     # Open a new page for each game
@@ -33,7 +66,11 @@ async def process_game(context, game_url, bookmaker_name):
     
     try:
         print(f"Navigating to match URL: {game_url}")
-        await game_page.goto(game_url, wait_until='networkidle', timeout=30000)
+        success = await goto_with_retry(game_page, game_url)
+        if not success:
+            await game_page.close()
+            print(f"Skipping match due to load failure: {game_url}")
+            return None
         
         # Await the main elements to load
         await game_page.wait_for_selector("[data-testid='game-host']", timeout=15000)
@@ -74,13 +111,22 @@ async def process_game(context, game_url, bookmaker_name):
             odds_cells = bookmaker_block.locator('[data-testid="odd-container"]')
             
             for i in range(await odds_cells.count()):
-                await expect(odds_cells.nth(i)).to_be_visible()
-                await odds_cells.nth(i).hover()
+                await expect(odds_cells.nth(i)).to_be_visible(timeout=5000)
+                await odds_cells.nth(i).hover(force=True)
                 
                 # Extraction of odds and timestamps
                 try:
-                    odds_block = game_page.locator("h3", has_text="Odds movement").locator("..")
-                    await odds_block.wait_for(state="visible", timeout=5000)
+                    odds_text = None
+                    for _ in range(3):
+                        odds_headers = game_page.locator("h3", has_text="Odds movement")
+                        if await odds_headers.count() > 0:
+                            odds_block = odds_headers.locator("..")
+                            await odds_block.wait_for(state="visible", timeout=3000)
+                            odds_text = await odds_block.text_content()
+                            break
+                        await asyncio.sleep(1)
+                    if odds_text is None:
+                        print("Odds movement not found after 3 retries")
                     
                     odds_text = await odds_block.text_content()
                     pattern = r"(\d{1,2} \w{3,}, \d{2}:\d{2})([0-9]+\.[0-9]+)"
@@ -116,25 +162,22 @@ async def process_game(context, game_url, bookmaker_name):
         print(f"Failed to process match {game_url}: {e}")
         await game_page.close()
         return None
+    finally:
+        if not game_page.is_closed():
+            await game_page.close()
 
 @pytest.mark.asyncio()
 async def test_get_historical_events(sport_name, region_name, competition_name, season, bookmaker_name):
     # Use Playwright to navigate and extract data
     async with async_playwright() as p:
         browser = await p.chromium.launch()
-        context = await browser.new_context()
+        context = await browser.new_context(user_agent=random.choice(USER_AGENTS))
         page = await context.new_page()
 
         await page.goto("https://www.oddsportal.com/standings", wait_until='networkidle')
         
         # Manage cookie consent if present
-        try:
-            accept_cookies = page.get_by_role("button", name=re.compile("Accept", re.IGNORECASE))
-            if await accept_cookies.is_visible(timeout=5000):
-                await accept_cookies.click()
-                await asyncio.sleep(1)
-        except:
-            pass
+        await handle_cookie_consent(page)
         
         # Navigate through the site to reach the desired competition and season
         await page.locator('li[data-testid="sport-tab-list-item"]', has_text=sport_name).first.click()
@@ -210,16 +253,46 @@ async def test_get_historical_events(sport_name, region_name, competition_name, 
 
         # Limit the number of concurrent pages to avoid overwhelming the browser
         semaphore = asyncio.Semaphore(3)  # 3 concurrent pages
-        async def limited_process_game(url):
+
+        async def limited_process_game(ctx, url):
             async with semaphore:
-                return await process_game(context, url, bookmaker_name)
-        
-        # Process all games concurrently with limited concurrency
-        tasks = [limited_process_game(url) for url in game_urls]
-        results = await asyncio.gather(*tasks)
-        
-        # Filter out None results
-        odds_data["events"] = [result for result in results if result is not None]
+                return await process_game(ctx, url, bookmaker_name)
+
+        # Batch processing configuration
+        batch_size = 30  # reduced batch size to limit memory usage
+        odds_data["events"] = []
+
+        for i in range(0, len(game_urls), batch_size):
+            batch = game_urls[i:i+batch_size]
+            print(f"Processing batch {i//batch_size + 1}/{(len(game_urls)+batch_size-1)//batch_size} "
+                f"({len(batch)} matches)...")
+
+            # Process each batch of games
+            tasks = [limited_process_game(context, url) for url in batch]
+            results = await asyncio.gather(*tasks)
+            odds_data["events"].extend([r for r in results if r is not None])
+
+            # Close all pages in the context to free memory
+            for page in context.pages:
+                try:
+                    await page.close()
+                except:
+                    pass
+
+            # Random sleep between batches to mimic human behavior and avoid rate limiting
+            await asyncio.sleep(random.uniform(2, 5))
+
+            # Restart browser and context every batch to manage memory usage
+            if i + batch_size < len(game_urls):
+                print("Restarting browser and context to avoid memory/leak issues...")
+                await context.close()
+                await browser.close()
+                browser = await p.chromium.launch()
+                context = await browser.new_context()
+                page = await context.new_page()
+                await page.goto("https://www.oddsportal.com", wait_until="networkidle")
+                await handle_cookie_consent(page)
+                await page.close()
         
         # Save the extracted data to a JSON file
         save_odds_data(odds_data)
@@ -228,6 +301,3 @@ async def test_get_historical_events(sport_name, region_name, competition_name, 
         # Close the browser context and browser
         await context.close()
         await browser.close()
-
-# bugs to fix:
-# some pages game_page.goto not loading properly (timeout even with wait_until networkidle) - need to retry or refresh 

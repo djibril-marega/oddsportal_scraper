@@ -3,3 +3,6 @@
 .env
 __pycache__/
 .pytest_cache/
+logs/
+scraped_data/
+test_configs.json
