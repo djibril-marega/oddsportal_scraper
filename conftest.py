@@ -6,3 +6,5 @@ def pytest_addoption(parser):
     parser.addoption("--bookmaker", action="store", default="Betclic", help="bookmaker name (eg. Pinnacle, Bet365)")
     parser.addoption("--team", action="store", default=None, help="team name (eg. Machester United, PSG, Real madrid)")
     parser.addoption("--teamid", action="store", default=None, help="team id (eg. nVp0wiqd)")
+    parser.addoption("--spread", action="store", default=None, help="data spread type (eg. completly, team)")
+    parser.addoption("--typegame", action="store", default="historcal", help="type of game links (eg. historical, upcoming)")

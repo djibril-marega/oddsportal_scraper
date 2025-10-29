@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-def save_odds_data(odds_data, base_dir="scraped_data", type_historical="competition"):
+def save_odds_data(odds_data, base_dir="scraped_data", type_historical="competition", type_game="historcal"):
     """
     Save odds data to a JSON file with an descriptive filename.
     
@@ -41,9 +41,12 @@ def save_odds_data(odds_data, base_dir="scraped_data", type_historical="competit
     # Create filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if type_historical == "competition":
-        filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(region)}_{clean_filename(odds_data["competition"])}_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
+        if type_game == "upcoming":
+            filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(region)}_{clean_filename(odds_data['competition'])}_{clean_filename(bookmaker)}_upcoming.json"
+        else:
+            filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(region)}_{clean_filename(odds_data['competition'])}_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
     elif type_historical == "team":
-        filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(odds_data["team"])}_team_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
+        filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(odds_data['team'])}_team_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
     
     # Full file path
     filepath = os.path.join(base_dir, filename)

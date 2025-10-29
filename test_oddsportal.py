@@ -6,7 +6,7 @@ import random
 from test_get_competition_match_history import get_competition_match_history, get_several_competitions_match_history
 from test_get_team_match_history import get_team_match_history
 from test_get_match_history import get_history_matchs_urls 
-from manage_links import generate_links
+from manage_links import generate_links_game
 from extract_data import is_file_existing, build_team_url
 import copy
 
@@ -48,11 +48,18 @@ def team_name(request):
 def team_id(request):
     return request.config.getoption("--teamid")
 
+@pytest.fixture 
+def spread(request):
+    return request.config.getoption("--spread")
+
+@pytest.fixture 
+def type_game(request):
+    return request.config.getoption("--typegame")
 
 
 
 @pytest.mark.asyncio()
-async def test_get_historical_events(sport_name, season, bookmaker_name, region_name, competition_name, team_name, team_id):
+async def test_get_historical_events(sport_name, season, bookmaker_name, region_name, competition_name, team_name, team_id, spread, type_game):
     """
     Main asynchronous function that orchestrates the retrieval and storage of historical event data
     for both competitions and teams on OddsPortal.
@@ -87,7 +94,11 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
             context = await browser.new_context(user_agent=random.choice(USER_AGENTS))
             page = await context.new_page()
             if competition_name is not None:
-                list_links_season = generate_links([(region_name, competition_name)], season)
+                if type_game == "historcal":
+                    list_links_season = generate_links_game([(region_name, competition_name)], season)
+                elif type_game == "upcoming":
+                    list_links_season = generate_links_game([(region_name, competition_name)], type_game="upcoming")
+
                 season_url = list_links_season[0]
                 await page.goto(season_url, wait_until='domcontentloaded')
                 await asyncio.sleep(2)
@@ -128,8 +139,11 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
                                                                                             copy.deepcopy(odds_data), links_teams)
                 # Save competition data and free memory
                 if len(odds_data["events"]) > 0:
-                    save_odds_data(odds_data)
+                    save_odds_data(odds_data, type_game=type_game)
                     odds_data["events"] = []
+                
+                if spread is None:
+                    return
             
 
             # get historical data for teams
@@ -165,6 +179,8 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
             else:
                 print(f"None team finded beacause is already exists")   
 
+            if spread == "team":
+                return
             # get historical data for secondary competitions
             if competition_name is not None:
                 if len(list_regions_competitions) > 0:

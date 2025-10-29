@@ -12,7 +12,7 @@ async def get_competition_link(page):
     competition_link = await page.get_attribute("a[data-testid='3']", "href")
     return "https://www.oddsportal.com" + competition_link
 
-def generate_links(data, season):
+def generate_links_game(data, season=None, type_game="historcal"):
     """
     Generates URLs for football competition results on OddsPortal.
 
@@ -31,7 +31,9 @@ def generate_links(data, season):
         Example: ["https://www.oddsportal.com/football/france/ligue-1-2023-2024/results/",
                 "https://www.oddsportal.com/football/england/premier-league-2023-2024/results/"]
     """
-
+    if season is None and type_game == "historcal":
+        raise ValueError("Season must be provided for historical game links.")
+    
     base_url = "https://www.oddsportal.com/football"
     links = []
     for country, competition in data:
@@ -48,10 +50,14 @@ def generate_links(data, season):
                             .replace('à', 'a')
                             .replace(' ', '-')
         )
-        season = (
-            season.replace('/', '-')
-        )
-        link = f"{base_url}/{country_slug}/{competition_slug}-{season}/results/"
+        if season is not None:
+            season = (
+                season.replace('/', '-')
+            )
+        if type_game == "historcal":
+            link = f"{base_url}/{country_slug}/{competition_slug}-{season}/results/"
+        elif type_game == "upcoming":
+            link = f"{base_url}/{country_slug}/{competition_slug}/"
         links.append(link)
 
     return links

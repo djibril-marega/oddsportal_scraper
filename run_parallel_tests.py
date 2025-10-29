@@ -58,15 +58,18 @@ async def run_test(config, verbose=False, logs_dir=None):
         f"--sport={config['sport']}",
         f"--region={config['region']}",
         f"--season={config['season']}",
-        f"--bookmaker={config['bookmaker']}",
+        f"--bookmaker={config['bookmaker']}"
     ]
 
     # add either competition or team parameters
     if competition:
         cmd.append(f"--competition={competition}")
+        cmd.append(f"--typegame={config['typegame']}")
     else:
         cmd.append(f"--team={team}")
         cmd.append(f"--teamid={teamid}")
+    if "spread" in config and config["spread"] is not None:
+        cmd.append(f"--spread={config['spread']}")
 
     # general pytest options
     cmd += ["-v", "--tb=short"]

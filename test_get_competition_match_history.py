@@ -3,7 +3,7 @@ import random
 from test_website_navigation import restart_browser_context
 from test_get_match_history import limited_process_game, get_history_matchs_urls
 from extract_data import remove_tuple, extract_region_competition, is_file_existing
-from manage_links import generate_links, generate_year_links
+from manage_links import generate_links_game, generate_year_links
 import copy
 
 #@pytest.mark.asyncio
@@ -71,7 +71,7 @@ async def get_several_competitions_match_history(browser, context, p, page, sema
     returns a list of odds_data for all processed competitions.
     """
     list_regions_competitions_cleaned = remove_tuple(list_regions_competitions, (region_competion_tuple[0], region_competion_tuple[1]))
-    list_competitions_links = generate_links(list_regions_competitions_cleaned, season)
+    list_competitions_links = generate_links_game(list_regions_competitions_cleaned, season)
     list_odds_data = []
     for competition_link in list_competitions_links:
             odds_data["events"] = []

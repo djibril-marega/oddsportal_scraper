@@ -101,7 +101,7 @@ async def get_match_details(game_page, game_url, bookmaker_name, season):
                             print(f"Skipping odds extraction due to persistent load issues: {game_url}")
                             break
                 #await expect(odds_cells.nth(i)).to_be_visible(timeout=10000)
-                await odds_cells.nth(i).click(force=True)
+                await odds_cells.nth(i).hover()
                 
                 # Extraction of odds and timestamps
                 try:
@@ -119,7 +119,7 @@ async def get_match_details(game_page, game_url, bookmaker_name, season):
                                 break
                             await asyncio.sleep(2)
                             if _ > 2:
-                                await odds_cells.nth(i).click(force=True)
+                                await odds_cells.nth(i).hover()
                         if odds_text is None:
                             print("Odds movement not found after 3 retries") # rouvrir une nouvelle page 
                     except Exception as e:

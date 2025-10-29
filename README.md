@@ -1,40 +1,47 @@
+
+---
+
 ## 🧾 README
 
 ### Overview
 
-This Python project allows you to scrape the match history of a **team** or a **competition** from [oddsPortal.com](https://www.oddsportal.com).
+This Python project allows you to scrape both the **match history** and the **upcoming matches** of a **team** or a **competition** from [oddsPortal.com](https://www.oddsportal.com).
 
-It provides detailed information for a given **sport**, **team**, or **competition** during a specific **season**.
+It provides detailed information for a given **sport**, **team**, or **competition** during a specific **season**, according to user-defined parameters.
 
 ---
 
 ### 📊 Collected Data
 
-#### For a competition:
+#### For a competition
 
-In addition to the general information provided by the user (`season`, `bookmaker`, `market`, `region`, `competition`, `sport`), the script collects the following data for each match:
+In addition to the general information provided by the user (`season`, `bookmaker`, `market`, `region`, `competition`, `sport`), the script collects for each match:
 
 * Match score
 * Home team
 * Away team
-* Opening and closing odds (value, date, and time) for outcome **1** in the **1X2** market
-* Opening and closing odds (value, date, and time) for outcome **X** (if available)
-* Opening and closing odds (value, date, and time) for outcome **2** in the **1X2** market
+* Opening and closing odds (value, date, and time) for outcome **1**, **X**, and **2** in the **1X2** market
 
-Furthermore, when retrieving the history of a **competition**, the script also:
+Depending on the `typegame` and `spread` options, the scraper adapts its behavior:
 
-* Fetches the **match history of all teams** that participated in that competition during the specified season.
-* Collects the **history of other competitions** that these teams played in during the same season.
-* **Skips** any team or competition from that season if its data **already exists** in the `scraped_data/` directory — avoiding redundant scraping and saving time.
+| Key          | Description                                                      | Possible Values                                                                                                                                         | Default        |
+| ------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| **typegame** | Defines whether to scrape **upcoming** or **historical** matches | `"upcoming"` or `"historical"`                                                                                                                          | `"historical"` |
+| **spread**   | Defines the scraping scope for competitions                      | `"none"` (only the selected competition) / `"team"` (also fetches team histories) / `"completly"` (fetches all teams + all competitions they played in) | `"none"`       |
 
-This provides a **complete overview of the season** for both the competition and all teams involved.
+For example:
 
-#### For a team:
+* `typegame="historical"`, `spread="team"` → fetches the competition’s match history + all participating teams’ histories.
+* `typegame="upcoming"` → fetches only **upcoming matches** of the competition.
 
-In addition to the same information collected for competitions, each match entry also includes:
+When `spread` is `"team"` or `"completly"`, already-scraped data in `scraped_data/` are **skipped** to avoid redundancy and save time.
+
+#### For a team
+
+The script collects the same information as for competitions, plus:
 
 * The **region** where the competition takes place
-* The **competition** name
+* The **competition name**
 
 ⚠️ The odds are retrieved according to the specified bookmaker.
 
@@ -51,7 +58,7 @@ In addition to the same information collected for competitions, each match entry
 
 ```bash
 git clone https://github.com/djibril-marega/oddsportal_scraper.git
-cd my-project
+cd oddsportal_scraper
 pip install -r requirements.txt
 ```
 
@@ -62,6 +69,7 @@ pip install -r requirements.txt
 #### Method 1 — Recommended (modular and reproducible)
 
 Create a `.json` configuration file containing teams or competitions.
+
 Example for a **team**:
 
 ```json
@@ -77,10 +85,7 @@ Example for a **team**:
 ]
 ```
 
-You can find the `teamid` in the team’s URL on oddsPortal:
-Example: `https://www.oddsportal.com/football/team/psg/CjhkPw0k/` → `teamid` = `CjhkPw0k`
-
-Example for a **competition**:
+Example for a **competition** (historical data):
 
 ```json
 [
@@ -94,7 +99,20 @@ Example for a **competition**:
 ]
 ```
 
-You can mix both teams and competitions in the same JSON list — there’s no limit to the number of entries.
+Example for **upcoming matches** of a competition:
+
+```json
+[
+  {
+    "sport": "Football",
+    "region": "France",
+    "competition": "Ligue 1",
+    "season": "2025/2026",
+    "bookmaker": "Betclic",
+    "typegame": "upcoming"
+  }
+]
+```
 
 To execute the script:
 
@@ -114,14 +132,16 @@ python .\run_parallel_tests.py
 
 #### Method 2 — Quick test (less reproducible)
 
-Run directly with pytest:
+Run directly with `pytest`:
 
 ```bash
-pytest test_oddsportal.py --sport=Football --region=France --competition="Ligue 1" --season=2021/2022 --bookmaker=Betclic -v --tb=short
+pytest test_oddsportal.py --sport=Football --region=France --competition="Ligue 1" --season=2025/2026 --bookmaker=Betclic --typegame=upcoming -v --tb=short
 ```
 
 Options:
 
+* `--typegame`: `"upcoming"` or `"historical"`
+* `--spread`: `"none"`, `"team"`, or `"completly"`
 * `-v`: verbose mode
 * `--tb=short`: concise traceback
 
@@ -143,7 +163,8 @@ project/
 ## 🧠 Notes
 
 * The scraper relies on **Playwright**, so the first run may download browsers automatically.
-* Using Method 1 is strongly recommended for scalability and reproducibility.
-* Already collected teams or competitions (for the same season) are **automatically skipped** to prevent redundant data collection.
+* Using **Method 1** is recommended for scalability and reproducibility.
+* Already collected teams or competitions (for the same season) are **automatically skipped** to avoid redundant scraping.
+* `typegame` and `spread` allow flexible control of scraping scope — from a single competition’s upcoming games to a full seasonal network of related competitions and teams.
 
 ---
