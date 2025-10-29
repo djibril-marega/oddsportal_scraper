@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-def save_odds_data(odds_data, base_dir="scraped_data"):
+def save_odds_data(odds_data, base_dir="scraped_data", type_historical="competition"):
     """
     Save odds data to a JSON file with an descriptive filename.
     
@@ -40,14 +40,27 @@ def save_odds_data(odds_data, base_dir="scraped_data"):
     
     # Create filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(region)}_{clean_filename(competition)}_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
+    if type_historical == "competition":
+        filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(region)}_{clean_filename(odds_data["competition"])}_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
+    elif type_historical == "team":
+        filename = f"{timestamp}_{clean_filename(sport)}_{clean_filename(odds_data["team"])}_team_{clean_filename(season)}_{clean_filename(bookmaker)}.json"
     
     # Full file path
     filepath = os.path.join(base_dir, filename)
     
     # Save data as formatted JSON
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(odds_data, f, indent=2, ensure_ascii=False)
-    
-    print(f"Data successfully saved to: {filepath}")
+    json_str = json.dumps(odds_data, indent=2, ensure_ascii=False)
+
+    # Calculer la taille en octets
+    size_bytes = len(json_str.encode("utf-8"))
+
+    # Vérifier si la taille dépasse 1 Ko
+    if size_bytes > 1024:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(json_str)
+        print(f"Data successfully saved to: {filepath} ({size_bytes} bytes)")
+    else:
+        print(f"Data not saved due to small size ({size_bytes} octets)")
+        
+
     return filepath

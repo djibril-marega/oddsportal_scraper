@@ -1,9 +1,7 @@
 import json
 import asyncio
-import subprocess
 import sys
 import argparse
-import os
 from pathlib import Path
 from datetime import datetime
 
@@ -25,9 +23,12 @@ def generate_log_filename(config, timestamp):
     # Create a filesystem-safe name
     safe_sport = "".join(c for c in config['sport'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     safe_region = "".join(c for c in config['region'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-    safe_competition = "".join(c for c in config['competition'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-    
-    filename = f"{timestamp}_{safe_sport}_{safe_region}_{safe_competition}.log"
+    try:
+        safe_competition = "".join(c for c in config['competition'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        filename = f"{timestamp}_{safe_sport}_{safe_region}_{safe_competition}.log"
+    except KeyError:
+        safe_team = "".join(c for c in config['team'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        filename = f"{timestamp}_{safe_sport}_{safe_region}_{safe_team}.log"
     # Replace spaces with underscores and limit length
     filename = filename.replace(' ', '_')[:100]
     return filename
@@ -37,18 +38,44 @@ async def run_test(config, verbose=False, logs_dir=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = generate_log_filename(config, timestamp)
     log_filepath = logs_dir / log_filename
-    
+
+    # Extract parameters
+    competition = config.get("competition")
+    team = config.get("team")
+    teamid = config.get("teamid")
+
+    # check mutual exclusivity
+    if not competition and not (team and teamid):
+        raise ValueError("Il faut soit 'competition', soit ('team' et 'teamid').")
+
+    if competition and (team or teamid):
+        raise ValueError("Vous ne pouvez pas définir 'competition' en même temps que 'team' ou 'teamid'.")
+
+    # base command
     cmd = [
         sys.executable, "-m", "pytest",
         "test_oddsportal.py",
         f"--sport={config['sport']}",
         f"--region={config['region']}",
-        f"--competition={config['competition']}",
         f"--season={config['season']}",
         f"--bookmaker={config['bookmaker']}",
-        "-v",
-        "--tb=short"
     ]
+
+    # add either competition or team parameters
+    if competition:
+        cmd.append(f"--competition={competition}")
+    else:
+        cmd.append(f"--team={team}")
+        cmd.append(f"--teamid={teamid}")
+
+    # general pytest options
+    cmd += ["-v", "--tb=short"]
+
+    # JUnit XML logging
+    if logs_dir:
+        cmd += [f"--junitxml={log_filepath}"]
+
+
     
     if verbose:
         cmd.append("-s")  # Add -s option for pytest in verbose mode
@@ -82,26 +109,26 @@ async def run_test(config, verbose=False, logs_dir=None):
                 async def read_stream(stream, stream_name):
                     nonlocal stdout_text, stderr_text
                     while True:
-                        line = await stream.readline()
-                        if not line:
+                        chunk = await stream.read(4096)  # lit 4 Ko à la fois
+                        if not chunk:
                             break
                         try:
-                            decoded_line = line.decode('utf-8').rstrip()
+                            decoded = chunk.decode('utf-8', errors='replace')
                         except UnicodeDecodeError:
-                            decoded_line = line.decode('latin-1', errors='replace').rstrip()
-                        
-                        # Display on screen
-                        print(f"[{stream_name}] {decoded_line}")
-                        
-                        # Write to log file
-                        log_file.write(f"[{stream_name}] {decoded_line}\n")
-                        log_file.flush()  # Force immediate write
-                        
-                        # Store for return
+                            decoded = chunk.decode('latin-1', errors='replace')
+
+                        # Affiche et écrit en temps réel
+                        if decoded.strip():
+                            print(f"[{stream_name}] {decoded}", end="")
+                            log_file.write(f"[{stream_name}] {decoded}")
+                            log_file.flush()
+
+                        # Stocke pour retour final
                         if stream_name == "stdout":
-                            stdout_text += decoded_line + "\n"
+                            stdout_text += decoded
                         else:
-                            stderr_text += decoded_line + "\n"
+                            stderr_text += decoded
+
                 
                 # Read stdout and stderr in parallel
                 await asyncio.gather(
@@ -194,7 +221,10 @@ async def main(verbose=False):
     
     all_passed = True
     for result in logs:
-        config_str = f"{result['config']['sport']} - {result['config']['region']} - {result['config']['competition']}"
+        try:
+            config_str = f"{result['config']['sport']} - {result['config']['region']} - {result['config']['competition']}"
+        except KeyError:
+            config_str = f"{result['config']['sport']} - {result['config']['region']} - {result['config']['team']}"
         
         if result['returncode'] == 0:
             print(f"✓ {config_str}: SUCCESS")
@@ -229,7 +259,11 @@ async def main(verbose=False):
         
         for result in logs:
             status = "PASS" if result['returncode'] == 0 else "FAIL"
-            f.write(f"{status}: {result['config']['sport']} - {result['config']['region']} - {result['config']['competition']}\n")
+            try:
+                f.write(f"{status}: {result['config']['sport']} - {result['config']['region']} - {result['config']['competition']}\n")
+            except KeyError:
+                f.write(f"{status}: {result['config']['sport']} - {result['config']['region']} - {result['config']['team']}\n")
+
             f.write(f"  Log file: {result.get('log_file', 'N/A')}\n")
             if result['returncode'] != 0:
                 error_msg = result['stderr'] or result['stdout'] or "Unknown error"

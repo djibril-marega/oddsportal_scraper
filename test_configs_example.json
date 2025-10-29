@@ -1,4 +1,5 @@
 [
+
     {
         "sport": "Football",
         "region": "England", 
@@ -11,6 +12,71 @@
         "region": "France", 
         "competition": "Ligue 1",
         "season": "2024/2025", 
+        "bookmaker": "Betclic"
+    },
+
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2023/2024", 
+        "bookmaker": "Betclic"
+    },
+
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2022/2023", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2021/2022", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2020/2021", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2019/2020", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2018/2019", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2017/2018", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2016/2017", 
+        "bookmaker": "Betclic"
+    },
+    {
+        "sport": "Football",
+        "region": "France", 
+        "competition": "Ligue 1",
+        "season": "2015/2016", 
         "bookmaker": "Betclic"
     }
 ]
