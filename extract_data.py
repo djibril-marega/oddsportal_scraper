@@ -87,8 +87,8 @@ def is_file_existing(base_dir="scraped_data", type_historical="competition", reg
         return []
 
     def clean_filename(text):
-        text = text.replace('/', '-').replace('\\', '-').replace(':', '-').replace('*', '-')
-        text = text.replace('?', '-').replace('"', '-').replace('<', '-').replace('>', '-').replace('|', '-')
+        text = text.replace('/', '-').replace('\\', '-').replace(':', '-').replace('*', '-').lower()
+        text = text.replace('?', '-').replace('"', '-').replace('<', '-').replace('>', '-').replace('|', '-').lower()
         return "".join(c for c in text if c.isalnum() or c in (' ', '-', '_')).rstrip().replace(' ', '_')
 
     region_clean = clean_filename(region) if region else None
@@ -119,10 +119,12 @@ def is_file_existing(base_dir="scraped_data", type_historical="competition", reg
 
         # Extract season
         match = re.search(r"(\d{4}[-/]\d{4})", filename)
-        if not match:
-            continue
+        if match:
+            season_in_file = match.group(1).replace('/', '-')
+        else:
+            all_years = re.findall(r"(\d{4})", filename)
+            season_in_file = all_years[-1] if all_years else None 
 
-        season_in_file = match.group(1).replace('/', '-')
         if season_clean and season_in_file != season_clean:
             continue
 

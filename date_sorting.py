@@ -13,12 +13,18 @@ def check_season_position(season: str, date_str: str, season_boundary: str) -> i
         int: 1, 2, or 3
     """
 
-    start_year, end_year = map(int, season.split('/'))
-    start_month, start_day = map(int, season_boundary.split('-'))
+    try:
+        start_year, end_year = map(int, season.split('/'))
+        start_month, start_day = map(int, season_boundary.split('-'))
+        end_month, end_day = start_month, start_day
+    except: 
+        start_year, end_year = int(season), int(season)
+        start_month, start_day = int('01'), int('01')
+        end_month, end_day = int('12'), int('31')
     
     # difine start and end dates of the season
     start_date = datetime(start_year, start_month, start_day)
-    end_date = datetime(end_year, start_month, start_day)
+    end_date = datetime(end_year, end_month, end_day)
     
     # convert input date string to datetime object
     current_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")

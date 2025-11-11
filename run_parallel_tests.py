@@ -4,6 +4,9 @@ import sys
 import argparse
 from pathlib import Path
 from datetime import datetime
+import ctypes 
+
+ctypes.windll.kernel32.SetThreadExecutionState(0x00000001 |0x00000002)
 
 def parse_arguments():
     """Parse command line arguments"""
@@ -43,6 +46,7 @@ async def run_test(config, verbose=False, logs_dir=None):
     competition = config.get("competition")
     team = config.get("team")
     teamid = config.get("teamid")
+    typegame = config.get("typegame")
 
     # check mutual exclusivity
     if not competition and not (team and teamid):
@@ -64,12 +68,13 @@ async def run_test(config, verbose=False, logs_dir=None):
     # add either competition or team parameters
     if competition:
         cmd.append(f"--competition={competition}")
-        cmd.append(f"--typegame={config['typegame']}")
     else:
         cmd.append(f"--team={team}")
         cmd.append(f"--teamid={teamid}")
     if "spread" in config and config["spread"] is not None:
         cmd.append(f"--spread={config['spread']}")
+    if typegame:
+        cmd.append(f"--typegame={typegame}")
 
     # general pytest options
     cmd += ["-v", "--tb=short"]
@@ -287,3 +292,4 @@ async def main(verbose=False):
 if __name__ == "__main__":
     args = parse_arguments()
     asyncio.run(main(verbose=args.verbose))
+    ctypes.windll.kernel32.SetThreadExecutionState(0x00000001)

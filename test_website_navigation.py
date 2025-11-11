@@ -5,7 +5,7 @@ from playwright.async_api import expect, TimeoutError
 import random, asyncio
 
 @pytest.mark.asyncio
-async def goto_with_retry(page, url, retries=3, timeout=30000):
+async def goto_with_retry(page, url, retries=3, timeout=100000):
     """
     Asynchronously navigates to a URL with retry logic for pytest-asyncio.
 
@@ -26,12 +26,13 @@ async def goto_with_retry(page, url, retries=3, timeout=30000):
 
     for attempt in range(1, retries+1):
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            await page.goto(url, wait_until="networkidle", timeout=timeout)
+            await handle_cookie_consent(page)
             return True
         except Exception as e:
             print(f"Attempt {attempt} failed for {url}: {e}")
             if attempt < retries:
-                await asyncio.sleep(2 * attempt)  # Exponential backoff
+                await asyncio.sleep(3 * attempt)  # Exponential backoff
             else:
                 print(f"Failed to load page after {retries} attempts: {url}")
                 return False
@@ -92,3 +93,15 @@ async def wait_for_locator(locator, retries=3, timeout=5000):
         except:
             await asyncio.sleep(1)
     return False
+
+
+async def remove_overlays(page):
+    """Supprime les overlays connus qui bloquent hover ou clic."""
+    await page.evaluate("""() => {
+        const overlays = document.querySelectorAll(
+            '#onetrust-policy, .overlay-bookie-modal, [class*="overlay"]'
+        );
+        overlays.forEach(el => el.remove());
+    }""")
+    await page.evaluate("window.scrollTo(0, 0);")
+    await asyncio.sleep(0.5)

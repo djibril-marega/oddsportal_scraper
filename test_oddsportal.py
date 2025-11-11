@@ -1,5 +1,5 @@
 import asyncio
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Page
 import pytest
 from save_data import save_odds_data
 import random
@@ -93,6 +93,7 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
             browser = await p.chromium.launch()
             context = await browser.new_context(user_agent=random.choice(USER_AGENTS))
             page = await context.new_page()
+            print(type_game)
             if competition_name is not None:
                 if type_game == "historcal":
                     list_links_season = generate_links_game([(region_name, competition_name)], season)
@@ -105,6 +106,8 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
 
                 #current_url = page.url
                 game_urls = await get_history_matchs_urls(page, season_url, season)
+                #await Page.pause()
+                print(f"Found {len(game_urls)} game URLs for competition '{competition_name}' in season '{season}'.")
                 
                 odds_data = {
                     "sport": sport_name,
@@ -124,7 +127,7 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
                     return
 
             # Limit the number of concurrent pages to avoid overwhelming the browser
-            semaphore = asyncio.Semaphore(150)  # 3 concurrent pages
+            semaphore = asyncio.Semaphore(4)  # 4 concurrent pages
 
             # Batch processing configuration
             batch_size = 100  # reduced batch size to limit memory usage
