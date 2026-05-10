@@ -10,160 +10,186 @@ from date_sorting import check_season_position, season_to_date
 import traceback
 
 
+def fractional_to_decimal(frac):
+    num, den = map(float, frac.split('/'))
+    return round((num / den) + 1, 2)
+
+
+def american_to_decimal(value):
+    v = int(value)
+    return round((v / 100) + 1, 2) if v > 0 else round((100 / abs(v)) + 1, 2)
+
+
 @pytest.mark.asyncio
-async def get_match_details(game_page, game_url, bookmaker_name, season): 
-    """
-    Asynchronously retrieves detailed information for a single match.
-    Handles odds extraction that appears on hover.
-    """
+async def get_match_details(game_page, game_url, bookmaker_name, season):
 
     try:
         print(f"Navigating to match URL: {game_url}")
+
         success = await goto_with_retry(game_page, game_url)
         if not success:
             await game_page.close()
-            print(f"Skipping match due to load failure: {game_url}")
             return None
 
-        # ✅ GESTION DES POPUPS BLOQUANTES
+        # POPUPS
         try:
-            # Bannière cookies (OneTrust)
             await handle_cookie_consent(game_page)
-
-            # Supprime les overlays bloquants
-            await remove_overlays(game_page) 
+            await remove_overlays(game_page)
         except Exception as e:
             print(f"Popup handling failed: {e}")
 
-        # Attendre la fin du chargement
         try:
             await game_page.wait_for_selector("div[class*='Loader']", state="detached", timeout=15000)
-        except Exception:
-            print("Loader not detected or already gone.")
+        except:
+            pass
 
         await remove_overlays(game_page)
         await asyncio.sleep(2)
 
-        # Attendre les éléments principaux
-        for _ in range(3):
-            try:
-                await game_page.wait_for_selector("[data-testid='game-host']", timeout=10000)
-                break
-            except Exception as e:
-                print(f"Retrying to find main elements due to: {e}")
-                await goto_with_retry(game_page, game_url)
-                if _ == 2:
-                    print(f"Skipping match due to persistent load issues: {game_url}")
-                    await game_page.close()
-                    return None
+        # MATCH INFO
+        await game_page.wait_for_selector("[data-testid='game-host']", timeout=10000)
 
-        # Extraction des infos du match
         home_team = await game_page.text_content("[data-testid='game-host']")
-        home_point_element = await game_page.query_selector('[data-testid="game-host"] + div')
-        home_point = await home_point_element.text_content() if home_point_element else "N/A"
-
         away_team = await game_page.text_content("[data-testid='game-guest']")
-        away_point_element = await game_page.query_selector('//div[@data-testid="game-guest"]/preceding-sibling::div[1]')
-        away_point = await away_point_element.text_content() if away_point_element else "N/A"
-
-        # Date du match
         game_time = await game_page.text_content("[data-testid='game-time-item']")
+
         game_datetime = parse_oddsportal_date_to_datetime(game_time).strftime("%Y-%m-%d %H:%M")
 
         game_temporal_position = check_season_position(season, game_datetime, season_boundary="08-01")
+
         if game_temporal_position == 1:
-            print(f"Skipping match before season start date: {game_datetime} for season {season}")
             return 1
         if game_temporal_position == 3:
-            print(f"Skipping match after season end date: {game_datetime} for season {season}")
             return None
 
         event_data = {
-            "home_team": home_team.strip() if home_team else "N/A",
-            "away_team": away_team.strip() if away_team else "N/A",
+            "home_team": home_team.strip(),
+            "away_team": away_team.strip(),
             "date_time": game_datetime,
-            "score": f"{home_point}-{away_point}",
-            "odds": {"home_win_odds": [], "draw_odds": [], "away_win_odds": []}
+            "score": "N/A",
+            "odds": {
+                "home_win_odds": [],
+                "draw_odds": [],
+                "away_win_odds": []
+            }
         }
 
-        # Trouver la section du bookmaker
+        # BOOKMAKER SELECTION
         pattern_bookmaker = rf"^{bookmaker_name}(?:\.[a-z]+)?$"
-        link_bookmaker = game_page.locator('a > p', has_text=re.compile(pattern_bookmaker, re.IGNORECASE))
+        link_bookmaker = game_page.locator(
+            'a > p',
+            has_text=re.compile(pattern_bookmaker, re.IGNORECASE)
+        )
 
-        # Extraire région et compétition
         competition_link = await get_competition_link(game_page)
         region_name, competition_name = extract_region_competition(competition_link)
-        
+
         if await link_bookmaker.count() > 0:
+
             bookmaker_block = link_bookmaker.locator("xpath=../../..")
             await bookmaker_block.wait_for(state="visible")
+
             odds_cells = bookmaker_block.locator('[data-testid="odd-container"]')
 
             for i in range(await odds_cells.count()):
-                for _ in range(3):
-                    try:
-                        await odds_cells.nth(i).wait_for(state="visible", timeout=10000)
-                        break
-                    except Exception as e:
-                        print(f"Retrying to find odds cell due to: {e}")
-                        await goto_with_retry(game_page, game_url)
-                        await game_page.mouse.move(0, 0)
-                        if _ == 2:
-                            print(f"Skipping odds extraction due to persistent load issues: {game_url}")
-                            break
 
-                # ✅ Survoler la cote
+                cell = odds_cells.nth(i)
+
+                # =========================
+                # FR: HOVER
+                # =========================
                 try:
                     await remove_overlays(game_page)
-                    await odds_cells.nth(i).hover()
-                    await asyncio.sleep(1.5)
-                except Exception as e:
-                    print(f"Hover failed: {e}")
-                    continue
+                    await cell.hover()
+                    await asyncio.sleep(1)
+                except:
+                    pass
 
-                # Extraire les cotes affichées
+                # =========================
+                # UK/US: CLICK MODAL
+                # =========================
                 try:
-                    odds_block = None
-                    odds_text = None
-                    for _ in range(3):
-                        try:
-                            await game_page.wait_for_selector("h3:has-text('Odds movement')", timeout=12000)
-                            odds_headers = game_page.locator("h3", has_text="Odds movement")
-                            if await odds_headers.count() > 0:
-                                odds_block = odds_headers.locator("..")
-                                await odds_block.wait_for(state="attached", timeout=10000)
-                                odds_text = await odds_block.text_content()
-                                break
-                        except Exception as e:
-                            print(f"Retry {_+1}/3: Error while trying to find odds movement: {e}")
-                            await remove_overlays(game_page) 
-                            await asyncio.sleep(2)
-                            await odds_cells.nth(i).hover()
+                    await cell.click()
+                    await asyncio.sleep(1.5)
+                except:
+                    pass
 
-                    if not odds_block or not odds_text:
-                        print(f"No odds block found for {game_url}")
+                # =========================
+                # MODAL (UK/US)
+                # =========================
+                modal = game_page.locator("div.fixed.z-50")
+
+                odds_text = None
+
+                try:
+                    await modal.wait_for(state="visible", timeout=3000)
+
+                    block = modal.locator("text=Odds movement")
+                    await block.wait_for(timeout=3000)
+
+                    odds_text = await block.locator("..").text_content()
+
+                except:
+                    # =========================
+                    # FALLBACK FR INLINE
+                    # =========================
+                    try:
+                        await game_page.wait_for_selector(
+                            "h3:has-text('Odds movement')",
+                            timeout=3000
+                        )
+
+                        odds_header = game_page.locator(
+                            "h3",
+                            has_text="Odds movement"
+                        )
+
+                        if await odds_header.count() > 0:
+                            odds_text = await odds_header.locator("..").text_content()
+
+                    except Exception as e:
+                        print(f"Odds not found: {e}")
                         continue
 
-                    pattern = r"(\d{1,2} \w{3,}, \d{2}:\d{2})([0-9]+\.[0-9]+)"
-                    matches_odds_datetime = re.findall(pattern, odds_text)
+                if not odds_text:
+                    continue
 
-                    for date_odds_str, value in matches_odds_datetime:
-                        date_odds = add_missing_year(date_odds_str, game_datetime)
-                        key = ["home_win_odds", "draw_odds", "away_win_odds"][i]
-                        event_data["odds"][key].append({
-                            "value": float(value),
-                            "date_time": date_odds
-                        })
+                # =========================
+                # PARSING
+                # =========================
+                pattern = r"(\d{1,2} \w{3,}, \d{2}:\d{2})([0-9]+(?:\.[0-9]+|/[0-9]+|[+-][0-9]+))"
 
-                except Exception as e:
-                    print(f"Failed to extract odds: {e}")
+                matches = re.findall(pattern, odds_text)
+
+                for date_str, value in matches:
+
+                    date_odds = add_missing_year(date_str, game_datetime)
+                    key = ["home_win_odds", "draw_odds", "away_win_odds"][i]
+
+                    try:
+                        if "/" in value:
+                            value = fractional_to_decimal(value)
+
+                        elif value.startswith("+") or value.startswith("-"):
+                            value = american_to_decimal(value)
+
+                        else:
+                            value = float(value)
+
+                    except:
+                        continue
+
+                    event_data["odds"][key].append({
+                        "value": float(value),
+                        "date_time": date_odds
+                    })
 
                 await game_page.mouse.move(0, 0)
 
         return event_data, (region_name, competition_name)
-        
+
     except Exception as e:
-        print(f"Failed to process match {game_url}: {e}")
+        print(f"Error processing match {game_url}: {e}")
         traceback.print_exc()
         return None
 

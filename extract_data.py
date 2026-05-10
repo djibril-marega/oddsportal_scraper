@@ -79,10 +79,12 @@ def remove_tuple(data, target):
     return [t for t in data if tuple(x.lower() for x in t) != target_lower]
 
 
-def is_file_existing(base_dir="scraped_data", type_historical="competition", region=None, competition=None, team=None, season=None):
+def is_file_existing(base_dir="scraped_data", type_historical="competition", region=None, competition=None, team=None, season=None, type_game='historical'):
     """
     Check if a file already exists for given region/competition/team and season.
     """
+    if type_game == "upcoming":
+        return []
     if not os.path.exists(base_dir):
         return []
 
@@ -95,6 +97,7 @@ def is_file_existing(base_dir="scraped_data", type_historical="competition", reg
     competition_clean = clean_filename(competition) if competition else None
     team_clean = clean_filename(team) if team else None
     season_clean = clean_filename(season) if season else None
+    competition_pattern = rf"{competition_clean}_(\d{{4}}(?:-\d{{4}})?)"
 
     # Normalize season format
     if season_clean:
@@ -111,7 +114,7 @@ def is_file_existing(base_dir="scraped_data", type_historical="competition", reg
         if type_historical == "competition":
             if region_clean and region_clean not in filename:
                 continue
-            if competition_clean and competition_clean not in filename:
+            if competition_clean and not re.search(competition_pattern, filename):
                 continue
         elif type_historical in ("team", "teams"):
             if team_clean and team_clean not in filename:

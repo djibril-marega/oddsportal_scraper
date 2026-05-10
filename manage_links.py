@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 async def get_team_links(page):
     """Retrieves team links from the match page"""
@@ -31,6 +32,16 @@ def generate_links_game(data, season=None, type_game="historcal"):
         Example: ["https://www.oddsportal.com/football/france/ligue-1-2023-2024/results/",
                 "https://www.oddsportal.com/football/england/premier-league-2023-2024/results/"]
     """
+    def normalize_string_for_link(string):
+        string = (string.replace('&', 'and')
+                        .replace("'", '')
+                        .replace('é', 'e')
+                        .replace('è', 'e')
+                        .replace('ê', 'e')
+                        .replace('à', 'a')
+                        .replace(' ', '-'))
+        return string
+    
     if season is None and type_game == "historcal":
         raise ValueError("Season must be provided for historical game links.")
     
@@ -41,21 +52,17 @@ def generate_links_game(data, season=None, type_game="historcal"):
         competition_slug = competition.lower()
 
         # clearing country and competition names
-        competition_slug = (
-            competition_slug.replace('&', 'and')
-                            .replace("'", '')
-                            .replace('é', 'e')
-                            .replace('è', 'e')
-                            .replace('ê', 'e')
-                            .replace('à', 'a')
-                            .replace(' ', '-')
-        )
+        competition_slug = normalize_string_for_link(competition_slug)
+        country_slug = normalize_string_for_link(country_slug)
         if season is not None:
             season = (
                 season.replace('/', '-')
             )
         if type_game == "historcal":
-            link = f"{base_url}/{country_slug}/{competition_slug}-{season}/results/"
+            if not is_current_season(season):
+                link = f"{base_url}/{country_slug}/{competition_slug}-{season}/results/"
+            else:
+                link = f"{base_url}/{country_slug}/{competition_slug}/results/"
         elif type_game == "upcoming":
             link = f"{base_url}/{country_slug}/{competition_slug}/"
         links.append(link)
@@ -92,3 +99,29 @@ def generate_year_links(url, season):
         return link1, link2
 
     raise ValueError("Link format is incorrect, cannot generate year-specific links.")
+
+
+def is_current_season(season, start_month=8, end_month=7):
+    """
+    Vérifie si la saison donnée est en cours.
+    
+    :param season: str, format "YYYY" ou "YYYY-YYYY"
+    :param start_month: mois de début de la saison (1-12)
+    :param end_month: mois de fin de la saison (1-12)
+    """
+    now = datetime.now()
+    current_year = now.year
+    current_month = now.month
+
+    if '-' in season:
+        year1, year2 = map(int, season.split('-'))
+
+        # La saison couvre year1.start_month → year2.end_month
+        if (current_year == year1 and current_month >= start_month) or \
+           (current_year == year2 and current_month <= end_month):
+            return True
+        else:
+            return False
+    else:
+        # Saison sur une seule année civile
+        return int(season) == current_year

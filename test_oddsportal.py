@@ -58,6 +58,7 @@ def type_game(request):
 
 
 
+
 @pytest.mark.asyncio()
 async def test_get_historical_events(sport_name, season, bookmaker_name, region_name, competition_name, team_name, team_id, spread, type_game):
     """
@@ -88,9 +89,12 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
     """
 
     async with async_playwright() as p:
-        list_files = is_file_existing(region=region_name, competition=competition_name, season=season)
+        if type_game == "historcal":
+            list_files = is_file_existing(region=region_name, competition=competition_name, season=season)
+        elif type_game == "upcoming":
+            list_files = []
         if len(list_files) == 0:
-            browser = await p.chromium.launch()
+            browser = await p.chromium.launch(headless=False)#headless=False
             context = await browser.new_context(user_agent=random.choice(USER_AGENTS))
             page = await context.new_page()
             print(type_game)
@@ -139,7 +143,7 @@ async def test_get_historical_events(sport_name, season, bookmaker_name, region_
                 # First, get historical data for competitions
                 odds_data, links_teams, browser, context = await get_competition_match_history(context, browser, p, 
                                                                                             semaphore, game_urls, batch_size, 
-                                                                                            copy.deepcopy(odds_data), links_teams)
+                                                                                            copy.deepcopy(odds_data), links_teams, type_game)
                 # Save competition data and free memory
                 if len(odds_data["events"]) > 0:
                     save_odds_data(odds_data, type_game=type_game)

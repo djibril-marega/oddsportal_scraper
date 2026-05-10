@@ -8,7 +8,7 @@ import copy
 
 #@pytest.mark.asyncio
 
-async def get_competition_match_history(context, browser, p, semaphore, game_urls, batch_size, odds_data, links_teams): 
+async def get_competition_match_history(context, browser, p, semaphore, game_urls, batch_size, odds_data, links_teams, type_game): 
     """
     Asynchronously retrieves the match history for a given competition.
 
@@ -18,9 +18,9 @@ async def get_competition_match_history(context, browser, p, semaphore, game_url
     updating odds_data and links_teams, and returns them along with the browser and context.
     """
 
-    if is_file_existing(region=odds_data["region"], competition=odds_data["competition"], season=odds_data["season"]):
+    if is_file_existing(region=odds_data["region"], competition=odds_data["competition"], season=odds_data["season"], type_game=type_game):
         print(f"Competition '{odds_data['competition']}' data ({odds_data['region']}, {odds_data['season']}) already exists. Skipping this season.")
-        return odds_data, None, browser, context
+        return odds_data, None, browser, context 
     
     for i in range(0, len(game_urls), batch_size):
         batch = game_urls[i:i+batch_size]
